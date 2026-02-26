@@ -129,68 +129,8 @@ func openFileCrossplatform(path string) {
 	}
 }
 
-func readLine(prompt string) string {
-	fmt.Print(prompt)
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	return strings.TrimSpace(scanner.Text())
-}
 
-func main() {
-	rand.Seed(time.Now().UnixNano())
-	animatedBanner()
-	fmt.Println(colored("Scan Edge — сканер публичных IP и портов (для обучения)\n", "1;36"))
-
-	reader := bufio.NewReader(os.Stdin)
-
-	readInput := func(prompt string) string {
-		fmt.Print(prompt)
-		line, _ := reader.ReadString('\n')
-		return strings.TrimSpace(line)
-	}
-
-	unlimited := false
-	numIPs := 0
-
-	for {
-		raw := readInput("Сколько IP-адресов сгенерировать? (1-1000): ")
-		if strings.ToLower(raw) == ".unl" {
-			unlimited = true
-			fmt.Println(colored("Код активирован — лимит снят!", "1;33"))
-			time.Sleep(1 * time.Second)
-			break
-		}
-		n, err := strconv.Atoi(raw)
-		if err != nil {
-			fmt.Println("Ошибка: введите целое число")
-			continue
-		}
-		if n < 1 || n > 1000 {
-			fmt.Println("Введите число от 1 до 1000")
-			continue
-		}
-		numIPs = n
-		break
-	}
-
-	if unlimited {
-		for {
-			raw := readInput("Сколько IP-адресов сгенерировать?: ")
-			n, err := strconv.Atoi(raw)
-			if err != nil {
-				fmt.Println("Ошибка: введите целое число")
-				continue
-			}
-			if n < 1 {
-				fmt.Println("Введите положительное число")
-				continue
-			}
-			numIPs = n
-			break
-		}
-	}
-
-	portsRaw := readInput("Укажите порты (через запятую, например 80,443,22): ")
+func parsePorts(portsRaw string) []int {
 	portSet := map[int]struct{}{}
 	var ports []int
 	for _, part := range strings.Split(portsRaw, ",") {
@@ -212,25 +152,118 @@ func main() {
 			ports = append(ports, p)
 		}
 	}
+	return ports
+}
 
-	if len(ports) == 0 {
-		fmt.Println("Не указано ни одного допустимого порта. Завершение.")
-		return
+func clampTimeout(t float64) float64 {
+	if t < 0.1 {
+		return 0.1
 	}
+	if t > 5.0 {
+		return 5.0
+	}
+	return t
+}
 
-	timeoutSec := 1.0
-	raw := readInput("Таймаут подключения (сек, рекомендуемо 0.5–2): ")
-	if t, err := strconv.ParseFloat(raw, 64); err == nil {
-		timeoutSec = t
+func main() {
+	rand.Seed(time.Now().UnixNano())
+	animatedBanner()
+	fmt.Println(colored("Scan Edge — сканер публичных IP и портов (для обучения)\n", "1;36"))
+
+	args := os.Args[1:]
+
+	var numIPs int
+	var ports []int
+	var timeoutSec float64
+
+	if len(args) >= 3 {
+		n, err := strconv.Atoi(args[0])
+		if err != nil || n < 1 {
+			fmt.Println("Ошибка: первый аргумент (кол-во IP) должен быть целым числом >= 1")
+			return
+		}
+		numIPs = n
+
+		ports = parsePorts(args[1])
+		if len(ports) == 0 {
+			fmt.Println("Не указано ни одного допустимого порта. Завершение.")
+			return
+		}
+
+		t, err := strconv.ParseFloat(args[2], 64)
+		if err != nil {
+			fmt.Println("Ошибка: третий аргумент (таймаут) должен быть числом, например 0.5")
+			return
+		}
+		timeoutSec = clampTimeout(t)
+
+		fmt.Printf("Режим аргументов: %d IP, порты %v, таймаут %.2f сек\n\n", numIPs, ports, timeoutSec)
 	} else {
-		fmt.Println("Некорректное значение, используется таймаут по умолчанию = 1.0")
+		reader := bufio.NewReader(os.Stdin)
+
+		readInput := func(prompt string) string {
+			fmt.Print(prompt)
+			line, _ := reader.ReadString('\n')
+			return strings.TrimSpace(line)
+		}
+
+		unlimited := false
+		numIPs = 0
+
+		for {
+			raw := readInput("Сколько IP-адресов сгенерировать? (1-1000): ")
+			if strings.ToLower(raw) == ".unl" {
+				unlimited = true
+				fmt.Println(colored("Код активирован — лимит снят!", "1;33"))
+				time.Sleep(1 * time.Second)
+				break
+			}
+			n, err := strconv.Atoi(raw)
+			if err != nil {
+				fmt.Println("Ошибка: введите целое число")
+				continue
+			}
+			if n < 1 || n > 1000 {
+				fmt.Println("Введите число от 1 до 1000")
+				continue
+			}
+			numIPs = n
+			break
+		}
+
+		if unlimited {
+			for {
+				raw := readInput("Сколько IP-адресов сгенерировать?: ")
+				n, err := strconv.Atoi(raw)
+				if err != nil {
+					fmt.Println("Ошибка: введите целое число")
+					continue
+				}
+				if n < 1 {
+					fmt.Println("Введите положительное число")
+					continue
+				}
+				numIPs = n
+				break
+			}
+		}
+
+		ports = parsePorts(readInput("Укажите порты (через запятую, например 80,443,22): "))
+		if len(ports) == 0 {
+			fmt.Println("Не указано ни одного допустимого порта. Завершение.")
+			return
+		}
+
+		timeoutSec = 1.0
+		raw := readInput("Таймаут подключения (сек, рекомендуемо 0.5–2): ")
+		if t, err := strconv.ParseFloat(raw, 64); err == nil {
+			timeoutSec = t
+		} else {
+			fmt.Println("Некорректное значение, используется таймаут по умолчанию = 1.0")
+		}
+		timeoutSec = clampTimeout(timeoutSec)
 	}
-	if timeoutSec < 0.1 {
-		timeoutSec = 0.1
-	}
-	if timeoutSec > 5.0 {
-		timeoutSec = 5.0
-	}
+
 	timeout := time.Duration(timeoutSec * float64(time.Second))
 
 	fmt.Printf("\nГенерация %d IP и сканирование портов %v...\n\n", numIPs, ports)
